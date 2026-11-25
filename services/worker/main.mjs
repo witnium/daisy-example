@@ -20,9 +20,14 @@ export async function workOnce(store, config) {
   }
 }
 
+// The worker fills an idle ledger with synthetic entries up to this bound, then only processes submitted
+// jobs: a test fixture must not grow without limit on its host (one entry per second is ~340 MiB a day).
+export const SYNTHETIC_LEDGER_LIMIT = 1000;
+
 async function processJob(store, config) {
   let { job } = await apiRequest(config, '/internal/jobs');
   if (!job) {
+    if ((await store.rows()).length >= SYNTHETIC_LEDGER_LIMIT) return null;
     job = { id: `synthetic-${randomUUID()}`, payload: 'Daisy synthetic ledger entry' };
     await apiRequest(config, '/internal/jobs', { method: 'POST', body: JSON.stringify(job) });
     // Always read the shared FIFO, including submissions that arrived meanwhile.

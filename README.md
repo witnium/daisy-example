@@ -71,6 +71,10 @@ time because they share that management port.
 
 ## Service flow and evidence
 
+An idle worker adds one synthetic ledger entry per second until the ledger holds
+1,000 rows (`SYNTHETIC_LEDGER_LIMIT`), then only processes submitted jobs, so the
+example's storage stays bounded on its host.
+
 Web `/` renders the API ledger and the bound `EXAMPLE_MESSAGE`, and provides a
 job submission form. Changing the message binding changes the rendered response.
 The form posts `{ "id": "example-job", "payload": "example bytes" }` to web

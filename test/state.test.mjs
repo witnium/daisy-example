@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { createApi } from '../services/api/main.mjs';
 import { files, fileBytes, fileName, verifyPrefix } from '../services/api/files.mjs';
 import { createWeb } from '../services/web/main.mjs';
-import { workOnce } from '../services/worker/main.mjs';
+import { SYNTHETIC_LEDGER_LIMIT, workOnce } from '../services/worker/main.mjs';
 import { writeLedger } from '../services/worker/ledger.mjs';
 import { APPLICATION_PATHS, apiRequest, applicationHandler, configuration, httpReady } from '../services/common.mjs';
 import { memoryStore } from './support/store.mjs';
@@ -78,6 +78,16 @@ test('web submits through API, worker commits and completes files, web renders A
   const synthetic = await workOnce(store, configuration('worker', env));
   assert.match(synthetic.row.id, /^synthetic-/);
   assert.equal(synthetic.row.sequence, 2);
+});
+
+test('an idle worker stops adding synthetic entries at the ledger bound', async (t) => {
+  // Found live 2026-11-25: once the worker could reach the API it wrote one entry per second without limit
+  // and the local example passed the campaign's 64 MiB storage bound within the hour.
+  const full = Array.from({ length: SYNTHETIC_LEDGER_LIMIT }, (_, index) => ({ sequence: index + 1, id: `synthetic-${index + 1}` }));
+  const { env, store } = await setup(t, memoryStore(full));
+  assert.equal(await workOnce(store, configuration('worker', env)), null);
+  assert.equal(await store.nextJob(), null, 'no synthetic job was queued');
+  assert.equal((await store.rows()).length, SYNTHETIC_LEDGER_LIMIT);
 });
 
 test('private worker requests authenticate, errors and files never disclose the credential', async (t) => {
