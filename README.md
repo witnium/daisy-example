@@ -47,8 +47,9 @@ Run `node services/web/main.mjs`, `node services/api/main.mjs`, or
 | Worker | `DATABASE_URL` and `API_URL`. |
 | PostgreSQL | `POSTGRES_PASSWORD` through its approved binding. |
 
-For the Compose topology, explicitly bind `API_URL` to `http://api:9090` and
-`FILES_PATH` to `/data`. These are deployment bindings, never runtime defaults.
+Explicitly bind `API_URL` to `http://api:8081`, the API's application port, and
+`FILES_PATH` to `/data`. A platform advertises only application ports (a Kubernetes
+Service carries exactly the Compose `ports`), so dependants never rely on 9090. These are deployment bindings, never runtime defaults.
 The existing `files` named volume is mounted on all three Node services. API
 performs the file writes requested by worker; each service owns its bounded fault
 record. The worker mount and `database` volume are preserved; no ledger data is
@@ -59,8 +60,11 @@ transport. Missing configuration refuses startup by key; invalid URLs and
 unavailable database/files storage fail without printing binding values. Never
 put credentials in source, command arguments, logs, or checked-in files.
 
-Application ports are web 8080, API 8081, and worker 8082. Each process also has an
-internal management listener on 9090, excluded from Compose's advertised ports.
+Application ports are web 8080, API 8081, and worker 8082. Web's port is the public
+one and serves pages only. The API is private: its application port also serves
+`GET /health/ready` and the authenticated worker routes `/internal/jobs` and
+`/internal/complete`. Each process also has an internal management listener on 9090
+(faults, checkpoint, restore, liveness, version), excluded from Compose's advertised ports.
 Keep 9090 on the private service network; do not publish it or route a public
 hostname to it. Run local processes in separate network namespaces or one at a
 time because they share that management port.
@@ -96,8 +100,9 @@ the dependency is repaired to retry the pending job. No running service uses the
 in-memory stand-in, and no initialization deletes or migrates existing state.
 
 All `/internal/*` API routes require `Authorization: Bearer <EXAMPLE_TOKEN>` on
-9090. Invalid credentials receive 401 without being echoed. Public application
-listeners exclude every internal and management route. API rejects secret-bearing
+every listener. Invalid credentials receive 401 without being echoed. Web's public
+listener excludes every internal and management route; checkpoint, restore and
+fault controls are reachable only on 9090. API rejects secret-bearing
 job content before storage. Tests use a generated canary credential and check
 authentication failures, dependency errors, responses, and file bytes for leakage.
 No request headers, raw SQL errors, or binding values are logged.

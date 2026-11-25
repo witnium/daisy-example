@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createWeb } from '../services/web/main.mjs';
 import { createApi } from '../services/api/main.mjs';
 import { createWorker } from '../services/worker/main.mjs';
-import { applicationHandler, configuration, httpReady } from '../services/common.mjs';
+import { APPLICATION_PATHS, applicationHandler, configuration, httpReady } from '../services/common.mjs';
 
 const env = {
   SOURCE_REVISION: 'a'.repeat(40), FAULT_FILL_CAP_BYTES: '1048576', FAULT_FILL_FLOOR_BYTES: '1048576', EXAMPLE_MESSAGE: 'Daisy example',
@@ -67,7 +67,7 @@ test('web renders the approved nonsecret message and API answer', async (t) => {
 
 test('application ingress cannot expose management endpoints', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ service: 'api', rows: [] })));
-  const handler = applicationHandler(createWeb(env, { api: async () => {} }));
+  const handler = applicationHandler(createWeb(env, { api: async () => {} }), APPLICATION_PATHS.web);
   for (const path of ['/health/live', '/health/ready', '/version', '/version?x=1']) {
     assert.equal((await invoke(handler, path)).status, 404);
   }

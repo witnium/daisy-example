@@ -72,10 +72,19 @@ export async function httpReady(url, expectedService) {
   if (body.service !== expectedService || body.status !== 'ready') throw new Error('Dependency identity mismatch');
 }
 
+// Application ports are what the platform advertises (Kubernetes Services carry only these),
+// so each lists exactly the paths its callers use: web is public and serves pages only; API is
+// private and also serves the readiness and worker routes that web and worker call on it.
+export const APPLICATION_PATHS = Object.freeze({
+  web: Object.freeze(['/', '/jobs', '/ledger', '/files']),
+  api: Object.freeze(['/', '/jobs', '/ledger', '/files', '/health/ready', '/internal/jobs', '/internal/complete']),
+  worker: Object.freeze(['/', '/jobs', '/ledger', '/files']),
+});
+
 export function listen(service, port, requestHandler, close = async () => {}) {
-  const server = createServer(applicationHandler(requestHandler));
-  // Intake advertises only the application port. Management endpoints use a
-  // separate internal listener, so public web ingress cannot expose them.
+  const server = createServer(applicationHandler(requestHandler, APPLICATION_PATHS[service]));
+  // Management endpoints (faults, checkpoint, restore, liveness, version) use a
+  // separate internal listener that no advertised port reaches.
   const management = createServer(requestHandler);
   for (const listener of [server, management]) {
     listener.on('error', () => {
@@ -96,9 +105,10 @@ export function listen(service, port, requestHandler, close = async () => {}) {
   return server;
 }
 
-export function applicationHandler(requestHandler) {
+export function applicationHandler(requestHandler, paths) {
+  if (!Array.isArray(paths) || paths.length === 0) throw new Error('Application listener requires its path list');
   return (req, res) => {
-    if (!['/', '/jobs', '/ledger', '/files'].includes(req.url)) {
+    if (!paths.includes(req.url)) {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'not-found' }));
       return;

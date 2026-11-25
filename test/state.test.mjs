@@ -11,7 +11,7 @@ import { files, fileBytes, fileName, verifyPrefix } from '../services/api/files.
 import { createWeb } from '../services/web/main.mjs';
 import { workOnce } from '../services/worker/main.mjs';
 import { writeLedger } from '../services/worker/ledger.mjs';
-import { applicationHandler, configuration } from '../services/common.mjs';
+import { APPLICATION_PATHS, apiRequest, applicationHandler, configuration, httpReady } from '../services/common.mjs';
 import { memoryStore } from './support/store.mjs';
 
 async function serve(t, handler) {
@@ -28,9 +28,12 @@ async function setup(t, store = memoryStore()) {
   const env = { SOURCE_REVISION: 'a'.repeat(40), FAULT_FILL_CAP_BYTES: '1048576', FAULT_FILL_FLOOR_BYTES: '1048576', DATABASE_URL: 'postgresql://unit:unused@postgres/example',
     EXAMPLE_TOKEN: randomBytes(24).toString('hex'), FILES_PATH: directory, EXAMPLE_MESSAGE: 'Visible message' };
   const api = createApi(env, { postgres: async () => {}, files: volume.ready }, store, volume);
-  env.API_URL = await serve(t, api);
+  // Dependants reach the API through its advertised application port, as on the platform; the
+  // checkpoint and restore oracle runs against the management listener, as Daisy does in-pod.
+  env.API_URL = await serve(t, applicationHandler(api, APPLICATION_PATHS.api));
+  const managementUrl = await serve(t, api);
   const request = async (path, value, token = env.EXAMPLE_TOKEN) => {
-    const response = await fetch(new URL(path, env.API_URL), { method: value === undefined ? 'GET' : 'POST',
+    const response = await fetch(new URL(path, managementUrl), { method: value === undefined ? 'GET' : 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
     return { status: response.status, body: await response.json() };
@@ -39,9 +42,22 @@ async function setup(t, store = memoryStore()) {
 }
 const metadata = { runId: 'unit-run', imageDigest: `sha256:${'b'.repeat(64)}`, targetScope: 'isolated-test' };
 
+test('web and worker reach the API through its advertised application port; management routes stay off it', async (t) => {
+  // Found live 2026-11-25 (opsie-daisy run ex0099d9): web and worker called /health/ready and /internal/* on
+  // API_URL, the API's application port, which filtered them out, so the worker never completed a job.
+  const { env } = await setup(t);
+  const worker = configuration('worker', env);
+  await httpReady(new URL('/health/ready', worker.apiUrl), 'api');
+  assert.deepEqual(await apiRequest(worker, '/internal/jobs'), { job: null });
+  for (const path of ['/internal/checkpoint', '/internal/checkpoint/release', '/internal/restore', '/faults', '/health/live', '/version']) {
+    assert.equal((await fetch(new URL(path, env.API_URL), { method: 'POST', headers: { authorization: `Bearer ${env.EXAMPLE_TOKEN}` } })).status, 404, path);
+  }
+  assert.equal((await fetch(new URL('/internal/jobs', env.API_URL))).status, 401, 'worker routes stay authenticated');
+});
+
 test('web submits through API, worker commits and completes files, web renders API ledger', async (t) => {
   const { env, store, volume, request, directory } = await setup(t);
-  const web = await serve(t, applicationHandler(createWeb(env, { api: async () => {} })));
+  const web = await serve(t, applicationHandler(createWeb(env, { api: async () => {} }), APPLICATION_PATHS.web));
   const submit = await fetch(`${web}/jobs`, { method: 'POST', body: JSON.stringify({ id: 'web-job', payload: 'from the web' }) });
   assert.equal(submit.status, 202);
   assert.deepEqual(await submit.json(), { id: 'web-job', status: 'queued' });

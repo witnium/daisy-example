@@ -13,7 +13,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createWeb } from '../services/web/main.mjs';
 import { createApi } from '../services/api/main.mjs';
 import { createWorker } from '../services/worker/main.mjs';
-import { applicationHandler, configuration } from '../services/common.mjs';
+import { APPLICATION_PATHS, applicationHandler, configuration } from '../services/common.mjs';
 import { faults, MAX_LATENCY_MS, MAX_CRASHES, MAX_LEASE_MS } from '../services/faults.mjs';
 import { files, verifyPrefix } from '../services/api/files.mjs';
 import { memoryStore } from './support/store.mjs';
@@ -67,7 +67,7 @@ async function setup(t, service = 'api', overrides = {}) {
   const dependencies = { api: async () => {}, postgres: async () => {}, files: volume.ready };
   const handler = service === 'api' ? createApi(env, { postgres: dependencies.postgres, files: dependencies.files }, store, volume, control)
     : service === 'web' ? createWeb(env, { api: dependencies.api }, control) : createWorker(env, { api: dependencies.api, postgres: dependencies.postgres }, control);
-  const url = await serve(t, handler), publicUrl = await serve(t, applicationHandler(handler));
+  const url = await serve(t, handler), publicUrl = await serve(t, applicationHandler(handler, APPLICATION_PATHS[service]));
   const request = async (path = '/faults', value, token = env.EXAMPLE_TOKEN, origin = url) => {
     const response = await fetch(origin + path, { method: value === undefined ? 'GET' : 'POST', headers: { authorization: `Bearer ${token}` },
       ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
@@ -91,7 +91,8 @@ for (const service of ['web', 'api', 'worker']) {
     assert.equal(status.lastSet, null);
     assert.match(status.denial.reason, /Unauthorized/);
     assert.ok(f.output.some((line) => line.includes('fault-denied')));
-    for (const path of ['/faults', '/faults/reset', '/faults?x=1', '/internal/jobs', '/health/ready']) {
+    // The API's application port also serves readiness and the worker routes its dependants call.
+    for (const path of ['/faults', '/faults/reset', '/faults?x=1', ...(service === 'api' ? [] : ['/internal/jobs', '/health/ready'])]) {
       assert.equal((await f.request(path, metadata(f.clock), f.env.EXAMPLE_TOKEN, f.publicUrl)).status, 404);
     }
     for (const field of ['actor', 'runId', 'operationId', 'targetScope', 'extra']) {
