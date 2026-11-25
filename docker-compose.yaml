@@ -1,28 +1,28 @@
 name: daisy-example
 services:
   web:
-    image: ghcr.io/witnium/daisy-example-web@sha256:b9e805c43fbec5762492eedcb96ef26432b010992562c8e110e66595bcc3cb7a
+    image: ghcr.io/witnium/daisy-example-web@sha256:0c3f41363416d1d0bd74a922312fb2063fcf0da8065cd2cddf9f582b9e75394a
     ports: ["8080"]
     depends_on: [api]
     environment: [EXAMPLE_MESSAGE, API_URL, EXAMPLE_TOKEN, FILES_PATH]
     volumes: ["files:/data"]
     restart: unless-stopped
   api:
-    image: ghcr.io/witnium/daisy-example-api@sha256:5461c3530fbd9f810ed3d7690bd990407b19a330c337fb0abb1976ffb6482fb8
+    image: ghcr.io/witnium/daisy-example-api@sha256:c7cbcbb3821706cc4ca8b07a0a4efcbaa6a6bdc6da1c3328ef2b83f164a7aef5
     ports: ["8081"]
     depends_on: [postgres]
     environment: [DATABASE_URL, EXAMPLE_TOKEN, FILES_PATH, FAULT_FILL_CAP_BYTES, FAULT_FILL_FLOOR_BYTES]
     volumes: ["files:/data"]
     restart: unless-stopped
   worker:
-    image: ghcr.io/witnium/daisy-example-worker@sha256:b4a9b69ddd8a8575ded4a69109a097f45743dfcab541bf554e47804406a43cfe
+    image: ghcr.io/witnium/daisy-example-worker@sha256:60a59fc7550277b499fe86898bc3e09c20d1702ca396c3089d83441048c80ba2
     ports: ["8082"]
     depends_on: [api, postgres]
     environment: [DATABASE_URL, EXAMPLE_TOKEN, API_URL, FILES_PATH]
     volumes: ["files:/data"]
     restart: unless-stopped
   postgres:
-    image: ghcr.io/witnium/daisy-example-postgres@sha256:861cbcfab6b957526634c0311d9fa053e6b74f3886da6a1fe4dbf97c78c842a4
+    image: ghcr.io/witnium/daisy-example-postgres@sha256:8337c3142178c7c60bdbeef5d2c1898e95241a85c94d55ae3349cc1db1800ffb
     ports: ["5432"]
     environment: [POSTGRES_PASSWORD]
     volumes: ["database:/var/lib/postgresql/data"]
